@@ -4,7 +4,7 @@
 
 ## 功能特点
 
-- 📤 **截图上传**: 支持上传小黑盒比赛截图，自动OCR识别玩家信息
+- 📤 **截图上传**: 支持上传小黑盒比赛截图，使用 Gemini AI 自动识别玩家信息
 - ✏️ **手动录入**: 当OCR识别不准确时，支持手动录入比赛数据
 - 🏆 **积分系统**: 
   - 胜利 +1分
@@ -13,7 +13,7 @@
 - 📊 **数据统计**:
   - 总场次、胜场、负场
   - 胜率统计
-  - 称号统计（MVP、SVP、僵、摆等）
+  - 称号统计（MVP、SVP、僵）
 - 👥 **关系统计**:
   - 作为队友的胜率
   - 作为对手的胜率
@@ -25,29 +25,44 @@
 ### 环境要求
 
 - Python 3.8+
-- pip
+- uv (Python包管理器)
 
 ### 安装步骤
 
-1. 安装依赖：
+1. 创建虚拟环境：
 
 ```bash
-pip install -r requirements.txt
+uv venv
 ```
 
-> **注意**: PaddleOCR需要额外安装PaddlePaddle。如果OCR功能不可用，系统仍可正常使用手动录入功能。
-
-2. 运行应用：
+2. 激活虚拟环境并安装依赖：
 
 ```bash
-python app.py
+# Windows PowerShell
+.venv\Scripts\activate
+uv pip install -r requirements.txt
+
+# 或者一行命令
+.venv\Scripts\activate; uv pip install flask flask-cors requests pillow pandas openpyxl werkzeug
 ```
 
-3. 打开浏览器访问：
+3. 运行应用：
+
+```bash
+# 确保已激活虚拟环境
+.venv\Scripts\activate; python app.py
+```
+
+4. 打开浏览器访问：
 
 ```
 http://localhost:5000
 ```
+
+5. 首次使用需要设置 Gemini API Key：
+   - 点击右上角 **⚙️ 设置** 按钮
+   - 输入你的 Gemini API Key
+   - API Key 获取地址：https://aistudio.google.com/apikey
 
 ## 使用说明
 
@@ -89,15 +104,7 @@ http://localhost:5000
 | MVP | 最有价值玩家 |
 | SVP | 最无价值玩家（失败不扣分） |
 | 僵 | 僵尸 |
-| 摆 | 摆烂 |
-| 稳 | 稳定输出 |
-| 壕 | 土豪/经济领先 |
-| 奶 | 奶妈/治疗 |
-| 破 | 破坏/拆塔 |
-| 硬 | 硬核 |
-| 浪 | 浪/冒险 |
-| 扶 | 辅助 |
-| 劳 | 劳模 |
+
 
 ## 数据存储
 
@@ -110,9 +117,11 @@ http://localhost:5000
 dota积分系统/
 ├── app.py              # Flask主应用
 ├── database.py         # 数据库操作
-├── ocr_parser.py       # OCR图片识别
+├── ocr_parser.py       # Gemini AI图片识别
 ├── requirements.txt    # Python依赖
-├── game_data.json      # 数据存储文件
+├── game_data.json      # 数据存储文件（自动生成）
+├── .env                # API Key配置（自动生成）
+├── .venv/              # Python虚拟环境
 ├── static/
 │   └── index.html      # 前端页面
 ├── uploads/            # 截图上传目录
@@ -123,12 +132,13 @@ dota积分系统/
 
 - **后端**: Python + Flask
 - **前端**: HTML + CSS + JavaScript
-- **OCR**: PaddleOCR
+- **AI识别**: Google Gemini 2.5 Flash
 - **数据存储**: JSON文件
 
 ## 注意事项
 
-1. OCR识别可能不完全准确，请在提交前核对玩家信息
-2. 删除比赛记录会重新计算所有玩家的统计数据
-3. 建议定期备份 `game_data.json` 文件
+1. AI识别可能不完全准确，请在提交前核对玩家信息
+2. 如果识别的阵营错误，可点击"一键交换阵营"按钮
+3. 删除比赛记录会重新计算所有玩家的统计数据
+4. 建议定期备份 `game_data.json` 文件
 

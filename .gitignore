@@ -1,0 +1,29 @@
+# Python / Flask
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+
+# Env & secrets
+.env
+.env.*
+
+# IDE / editor
+.vscode/
+.idea/
+*.iml
+
+# Local data / uploads
+uploads/
+game_data.json
+dota_stats.xlsx
+
+# OS / misc
+*.log
+Thumbs.db
+.DS_Store
+
+
