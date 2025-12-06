@@ -117,6 +117,12 @@ def update_player_stats(data: dict, player: dict, won: bool, opponents: list):
         if not is_svp:
             p["score"] -= 1
     
+    # 个人称号加减分（不管胜负）
+    if is_mvp:
+        p["score"] += 0.5  # MVP额外加0.5分
+    if is_jiang:
+        p["score"] -= 0.5  # 僵额外扣0.5分
+    
     # 更新称号统计
     if is_mvp:
         p["mvp_count"] += 1
@@ -297,6 +303,50 @@ def delete_match(match_id: int) -> bool:
     data["matches"] = [m for m in data["matches"] if m.get("id") != match_id]
     
     # 重新计算所有玩家统计
+    recalculate_all_stats(data)
+    
+    save_data(data)
+    return True
+
+def get_match(match_id: int) -> Optional[dict]:
+    """获取指定比赛记录"""
+    data = load_data()
+    for match in data["matches"]:
+        if match.get("id") == match_id:
+            return match
+    return None
+
+def update_match(match_id: int, match_data: dict) -> bool:
+    """更新指定比赛记录并重新计算统计"""
+    data = load_data()
+    
+    # 找到要更新的比赛
+    match_index = None
+    for i, match in enumerate(data["matches"]):
+        if match.get("id") == match_id:
+            match_index = i
+            break
+    
+    if match_index is None:
+        return False
+    
+    # 保留原有的id和timestamp
+    original_id = data["matches"][match_index].get("id")
+    original_timestamp = data["matches"][match_index].get("timestamp")
+    
+    # 更新比赛数据
+    match_data["id"] = original_id
+    match_data["timestamp"] = original_timestamp
+    data["matches"][match_index] = match_data
+    
+    # 重新计算所有玩家统计
+    recalculate_all_stats(data)
+    
+    save_data(data)
+    return True
+
+def recalculate_all_stats(data: dict):
+    """重新计算所有玩家统计"""
     data["players"] = {}
     for match in data["matches"]:
         winner = match.get("winner", "")
@@ -310,9 +360,6 @@ def delete_match(match_id: int) -> bool:
             update_player_stats(data, player, dire_won, match.get("radiant_players", []))
         
         update_teammate_opponent_stats(data, match)
-    
-    save_data(data)
-    return True
 
 # 初始化数据库
 init_database()

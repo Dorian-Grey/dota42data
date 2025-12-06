@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DOTA2 积分系统</title>
+    <title>DOTA4+2 飞龙在天-对黑积分系统</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -814,7 +814,7 @@
     <header>
         <div class="header-content">
             <div class="logo">
-                DOTA2<span>积分系统</span>
+                DOTA4+2<span>飞龙在天-对黑积分系统</span>
             </div>
             <nav>
                 <button class="active" onclick="showPage('upload')">📤 录入比赛</button>
@@ -978,6 +978,47 @@
     <!-- Toast容器 -->
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- 编辑比赛弹窗 -->
+    <div class="modal-overlay" id="editMatchModal">
+        <div class="modal" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3 class="modal-title">✏️ 编辑比赛记录 <span id="editMatchId" style="color: var(--text-muted); font-size: 0.9rem;"></span></h3>
+                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-section">
+                    <h4>🏆 获胜方</h4>
+                    <div class="winner-select">
+                        <button class="winner-btn radiant" id="editWinnerRadiant" onclick="selectEditWinner('天辉')">
+                            🌿 天辉 (Radiant)
+                        </button>
+                        <button class="winner-btn dire" id="editWinnerDire" onclick="selectEditWinner('夜魔')">
+                            🔥 夜魔 (Dire)
+                        </button>
+                    </div>
+                    <button class="btn btn-secondary" onclick="swapEditTeams()" style="margin-top: 1rem; width: 100%;">
+                        🔄 一键交换阵营
+                    </button>
+                </div>
+
+                <div class="form-section">
+                    <h4><span class="team-badge radiant">天辉</span> 玩家列表</h4>
+                    <div class="player-inputs" id="editRadiantPlayers"></div>
+                </div>
+
+                <div class="form-section">
+                    <h4><span class="team-badge dire">夜魔</span> 玩家列表</h4>
+                    <div class="player-inputs" id="editDirePlayers"></div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="saveMatchEdit()">💾 保存修改</button>
+                    <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- API Key设置弹窗 -->
     <div class="modal-overlay" id="apiKeyModal">
         <div class="modal" style="max-width: 500px;">
@@ -1012,6 +1053,38 @@
         // 排序状态
         let currentPlayers = [];
         let sortState = { column: 'score', direction: 'desc' };
+
+        // 名字自动修正规则
+        const NAME_CORRECTIONS = {
+            '横手排赵東': '横手派赵东',
+            '横手排赵东': '横手派赵东',
+            '横手派赵東': '横手派赵东',
+            '杨空曲': '炀空曲',
+            '畅空曲': '炀空曲',
+            '扬空曲': '炀空曲',
+            'XDG': 'XD G',
+            'XD  G': 'XD G',
+        };
+
+        // 自动修正名字
+        function correctPlayerName(name) {
+            if (!name) return name;
+            let corrected = name.trim();
+            
+            // 精确匹配修正
+            if (NAME_CORRECTIONS[corrected]) {
+                return NAME_CORRECTIONS[corrected];
+            }
+            
+            // 部分匹配修正
+            for (const [wrong, right] of Object.entries(NAME_CORRECTIONS)) {
+                if (corrected.includes(wrong)) {
+                    corrected = corrected.replace(wrong, right);
+                }
+            }
+            
+            return corrected;
+        }
 
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
@@ -1294,6 +1367,51 @@
             }
         }
 
+        // 检查称号一致性
+        function checkTagsConsistency(winner, radiantPlayers, direPlayers) {
+            const warnings = [];
+            const radiantWon = winner === '天辉';
+            const direWon = winner === '夜魔';
+            
+            // 检查天辉队
+            radiantPlayers.forEach(player => {
+                if (radiantWon) {
+                    // 胜利方不应该有 SVP 或 僵
+                    if (player.tags.includes('SVP')) {
+                        warnings.push(`⚠️ ${player.name} 是胜利方但有SVP标签`);
+                    }
+                    if (player.tags.includes('僵')) {
+                        warnings.push(`⚠️ ${player.name} 是胜利方但有僵标签`);
+                    }
+                } else {
+                    // 失败方不应该有 MVP
+                    if (player.tags.includes('MVP')) {
+                        warnings.push(`⚠️ ${player.name} 是失败方但有MVP标签`);
+                    }
+                }
+            });
+            
+            // 检查夜魔队
+            direPlayers.forEach(player => {
+                if (direWon) {
+                    // 胜利方不应该有 SVP 或 僵
+                    if (player.tags.includes('SVP')) {
+                        warnings.push(`⚠️ ${player.name} 是胜利方但有SVP标签`);
+                    }
+                    if (player.tags.includes('僵')) {
+                        warnings.push(`⚠️ ${player.name} 是胜利方但有僵标签`);
+                    }
+                } else {
+                    // 失败方不应该有 MVP
+                    if (player.tags.includes('MVP')) {
+                        warnings.push(`⚠️ ${player.name} 是失败方但有MVP标签`);
+                    }
+                }
+            });
+            
+            return warnings;
+        }
+
         // 提交比赛
         function submitMatch() {
             if (!selectedWinner) {
@@ -1304,10 +1422,15 @@
             const radiantPlayers = [];
             const direPlayers = [];
             
-            // 收集天辉玩家
+            // 收集天辉玩家（自动修正名字）
             for (let i = 0; i < 5; i++) {
-                const name = document.getElementById(`radiant_player_${i}`).value.trim();
+                const rawName = document.getElementById(`radiant_player_${i}`).value.trim();
+                const name = correctPlayerName(rawName);
                 if (name) {
+                    // 如果名字被修正，更新输入框
+                    if (name !== rawName) {
+                        document.getElementById(`radiant_player_${i}`).value = name;
+                    }
                     const tags = [];
                     document.querySelectorAll(`#radiantPlayers .player-row:nth-child(${i+1}) .tag-btn.selected`).forEach(btn => {
                         tags.push(btn.textContent.trim());
@@ -1316,10 +1439,15 @@
                 }
             }
             
-            // 收集夜魔玩家
+            // 收集夜魔玩家（自动修正名字）
             for (let i = 0; i < 5; i++) {
-                const name = document.getElementById(`dire_player_${i}`).value.trim();
+                const rawName = document.getElementById(`dire_player_${i}`).value.trim();
+                const name = correctPlayerName(rawName);
                 if (name) {
+                    // 如果名字被修正，更新输入框
+                    if (name !== rawName) {
+                        document.getElementById(`dire_player_${i}`).value = name;
+                    }
                     const tags = [];
                     document.querySelectorAll(`#direPlayers .player-row:nth-child(${i+1}) .tag-btn.selected`).forEach(btn => {
                         tags.push(btn.textContent.trim());
@@ -1331,6 +1459,15 @@
             if (radiantPlayers.length === 0 && direPlayers.length === 0) {
                 showToast('请至少输入一个玩家', 'error');
                 return;
+            }
+            
+            // 检查称号一致性
+            const warnings = checkTagsConsistency(selectedWinner, radiantPlayers, direPlayers);
+            if (warnings.length > 0) {
+                const confirmMsg = warnings.join('\n') + '\n\n称号与胜负不一致，是否继续提交？\n（MVP只能在胜利方，SVP和僵只能在失败方）';
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
             }
             
             const matchData = {
@@ -1417,7 +1554,7 @@
                             ${player.name}
                         </span>
                     </td>
-                    <td class="score ${scoreClass}">${player.score > 0 ? '+' : ''}${player.score}</td>
+                        <td class="score ${scoreClass}">${player.score > 0 ? '+' : ''}${Number.isInteger(player.score) ? player.score : player.score.toFixed(1)}</td>
                     <td>${player.total_games}</td>
                     <td style="color: var(--accent-green)">${player.wins}</td>
                     <td style="color: var(--accent-red)">${player.losses}</td>
@@ -1429,9 +1566,9 @@
                                 <span>${player.win_rate}%</span>
                             </div>
                         </td>
-                        <td style="color: #ffd700; font-weight: 600;">${player.mvp_count || 0}</td>
-                        <td style="color: #9b59b6; font-weight: 600;">${player.svp_count || 0}</td>
-                        <td style="color: #7f8c8d; font-weight: 600;">${player.jiang_count || 0}</td>
+                        <td>${(player.mvp_count || 0) > 0 ? `<span class="tag-badge mvp">MVP×${player.mvp_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
+                        <td>${(player.svp_count || 0) > 0 ? `<span class="tag-badge svp">SVP×${player.svp_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
+                        <td>${(player.jiang_count || 0) > 0 ? `<span class="tag-badge jiang">僵×${player.jiang_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
                     `;
                 tbody.appendChild(tr);
             });
@@ -1519,9 +1656,14 @@
                     card.innerHTML = `
                         <div class="match-header">
                             <span class="match-date">📅 ${match.date || match.timestamp?.split('T')[0] || '未知日期'} | 第${match.id}场</span>
-                            <button class="btn btn-danger" onclick="deleteMatch(${match.id})" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
-                                🗑️ 删除
-                            </button>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn btn-secondary" onclick="editMatch(${match.id})" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+                                    ✏️ 编辑
+                                </button>
+                                <button class="btn btn-danger" onclick="deleteMatch(${match.id})" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">
+                                    🗑️ 删除
+                                </button>
+                            </div>
                         </div>
                         <div class="match-result">
                             <div class="match-team ${radiantWon ? 'winner' : ''}">
@@ -1576,6 +1718,253 @@
             });
         }
 
+        // 编辑比赛相关
+        let editingMatchId = null;
+        let editSelectedWinner = '';
+
+        function editMatch(matchId) {
+            fetch(`/api/match/${matchId}`)
+            .then(res => res.json())
+            .then(match => {
+                if (match.error) {
+                    showToast(match.error, 'error');
+                    return;
+                }
+                
+                editingMatchId = matchId;
+                document.getElementById('editMatchId').textContent = `#${matchId}`;
+                
+                // 初始化编辑表单的玩家输入框
+                initEditPlayerInputs();
+                
+                // 填充获胜方
+                editSelectedWinner = match.winner;
+                document.getElementById('editWinnerRadiant').classList.remove('selected');
+                document.getElementById('editWinnerDire').classList.remove('selected');
+                if (match.winner === '天辉') {
+                    document.getElementById('editWinnerRadiant').classList.add('selected');
+                } else if (match.winner === '夜魔') {
+                    document.getElementById('editWinnerDire').classList.add('selected');
+                }
+                
+                // 填充天辉玩家
+                (match.radiant_players || []).forEach((player, i) => {
+                    if (i < 5) {
+                        const input = document.getElementById(`edit_radiant_player_${i}`);
+                        if (input) input.value = player.name || '';
+                        
+                        // 设置标签
+                        (player.tags || []).forEach(tag => {
+                            document.querySelectorAll(`#editRadiantPlayers .player-row:nth-child(${i+1}) .tag-btn`).forEach(btn => {
+                                if (btn.textContent.trim() === tag) btn.classList.add('selected');
+                            });
+                        });
+                    }
+                });
+                
+                // 填充夜魔玩家
+                (match.dire_players || []).forEach((player, i) => {
+                    if (i < 5) {
+                        const input = document.getElementById(`edit_dire_player_${i}`);
+                        if (input) input.value = player.name || '';
+                        
+                        (player.tags || []).forEach(tag => {
+                            document.querySelectorAll(`#editDirePlayers .player-row:nth-child(${i+1}) .tag-btn`).forEach(btn => {
+                                if (btn.textContent.trim() === tag) btn.classList.add('selected');
+                            });
+                        });
+                    }
+                });
+                
+                document.getElementById('editMatchModal').classList.add('visible');
+            })
+            .catch(err => {
+                showToast('加载失败: ' + err.message, 'error');
+            });
+        }
+
+        function initEditPlayerInputs() {
+            const radiantContainer = document.getElementById('editRadiantPlayers');
+            const direContainer = document.getElementById('editDirePlayers');
+            
+            radiantContainer.innerHTML = '';
+            direContainer.innerHTML = '';
+            
+            for (let i = 0; i < 5; i++) {
+                radiantContainer.appendChild(createEditPlayerInput('radiant', i));
+                direContainer.appendChild(createEditPlayerInput('dire', i));
+            }
+        }
+
+        function createEditPlayerInput(team, index) {
+            const div = document.createElement('div');
+            div.className = 'player-row';
+            div.innerHTML = `
+                <input type="text" id="edit_${team}_player_${index}" placeholder="玩家名称">
+                <div class="tags-container">
+                    ${TAGS.map(tag => `
+                        <button class="tag-btn ${tag.toLowerCase()}" 
+                                onclick="this.classList.toggle('selected')">
+                            ${tag}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+            return div;
+        }
+
+        function selectEditWinner(team) {
+            editSelectedWinner = team;
+            document.getElementById('editWinnerRadiant').classList.remove('selected');
+            document.getElementById('editWinnerDire').classList.remove('selected');
+            document.getElementById(team === '天辉' ? 'editWinnerRadiant' : 'editWinnerDire').classList.add('selected');
+        }
+
+        function swapEditTeams() {
+            // 收集天辉玩家数据
+            const radiantData = [];
+            for (let i = 0; i < 5; i++) {
+                const name = document.getElementById(`edit_radiant_player_${i}`).value;
+                const tags = [];
+                document.querySelectorAll(`#editRadiantPlayers .player-row:nth-child(${i+1}) .tag-btn.selected`).forEach(btn => {
+                    tags.push(btn.textContent.trim());
+                });
+                radiantData.push({ name, tags });
+            }
+
+            // 收集夜魔玩家数据
+            const direData = [];
+            for (let i = 0; i < 5; i++) {
+                const name = document.getElementById(`edit_dire_player_${i}`).value;
+                const tags = [];
+                document.querySelectorAll(`#editDirePlayers .player-row:nth-child(${i+1}) .tag-btn.selected`).forEach(btn => {
+                    tags.push(btn.textContent.trim());
+                });
+                direData.push({ name, tags });
+            }
+
+            // 清空所有选中状态
+            document.querySelectorAll('#editMatchModal .tag-btn').forEach(btn => btn.classList.remove('selected'));
+
+            // 交换数据
+            for (let i = 0; i < 5; i++) {
+                document.getElementById(`edit_radiant_player_${i}`).value = direData[i].name;
+                direData[i].tags.forEach(tag => {
+                    document.querySelectorAll(`#editRadiantPlayers .player-row:nth-child(${i+1}) .tag-btn`).forEach(b => {
+                        if (b.textContent.trim() === tag) b.classList.add('selected');
+                    });
+                });
+
+                document.getElementById(`edit_dire_player_${i}`).value = radiantData[i].name;
+                radiantData[i].tags.forEach(tag => {
+                    document.querySelectorAll(`#editDirePlayers .player-row:nth-child(${i+1}) .tag-btn`).forEach(b => {
+                        if (b.textContent.trim() === tag) b.classList.add('selected');
+                    });
+                });
+            }
+
+            // 交换获胜方
+            if (editSelectedWinner === '天辉') {
+                selectEditWinner('夜魔');
+            } else if (editSelectedWinner === '夜魔') {
+                selectEditWinner('天辉');
+            }
+
+            showToast('阵营已交换', 'success');
+        }
+
+        function saveMatchEdit() {
+            if (!editSelectedWinner) {
+                showToast('请选择获胜方', 'error');
+                return;
+            }
+            
+            const radiantPlayers = [];
+            const direPlayers = [];
+            
+            // 收集天辉玩家（自动修正名字）
+            for (let i = 0; i < 5; i++) {
+                const rawName = document.getElementById(`edit_radiant_player_${i}`).value.trim();
+                const name = correctPlayerName(rawName);
+                if (name) {
+                    if (name !== rawName) {
+                        document.getElementById(`edit_radiant_player_${i}`).value = name;
+                    }
+                    const tags = [];
+                    document.querySelectorAll(`#editRadiantPlayers .player-row:nth-child(${i+1}) .tag-btn.selected`).forEach(btn => {
+                        tags.push(btn.textContent.trim());
+                    });
+                    radiantPlayers.push({ name, tags });
+                }
+            }
+            
+            // 收集夜魔玩家（自动修正名字）
+            for (let i = 0; i < 5; i++) {
+                const rawName = document.getElementById(`edit_dire_player_${i}`).value.trim();
+                const name = correctPlayerName(rawName);
+                if (name) {
+                    if (name !== rawName) {
+                        document.getElementById(`edit_dire_player_${i}`).value = name;
+                    }
+                    const tags = [];
+                    document.querySelectorAll(`#editDirePlayers .player-row:nth-child(${i+1}) .tag-btn.selected`).forEach(btn => {
+                        tags.push(btn.textContent.trim());
+                    });
+                    direPlayers.push({ name, tags });
+                }
+            }
+            
+            if (radiantPlayers.length === 0 && direPlayers.length === 0) {
+                showToast('请至少输入一个玩家', 'error');
+                return;
+            }
+            
+            // 检查称号一致性
+            const warnings = checkTagsConsistency(editSelectedWinner, radiantPlayers, direPlayers);
+            if (warnings.length > 0) {
+                const confirmMsg = warnings.join('\n') + '\n\n称号与胜负不一致，是否继续保存？\n（MVP只能在胜利方，SVP和僵只能在失败方）';
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+            }
+            
+            const matchData = {
+                winner: editSelectedWinner,
+                radiant_players: radiantPlayers,
+                dire_players: direPlayers
+            };
+            
+            fetch(`/api/match/${editingMatchId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(matchData)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('比赛记录已更新！', 'success');
+                    closeEditModal();
+                    loadMatches();
+                } else {
+                    showToast(data.error || '更新失败', 'error');
+                }
+            })
+            .catch(err => {
+                showToast('更新失败: ' + err.message, 'error');
+            });
+        }
+
+        function closeEditModal() {
+            document.getElementById('editMatchModal').classList.remove('visible');
+            editingMatchId = null;
+            editSelectedWinner = '';
+        }
+
+        // 点击编辑弹窗外部关闭
+        document.getElementById('editMatchModal').addEventListener('click', (e) => {
+            if (e.target.id === 'editMatchModal') closeEditModal();
+        });
+
         // 显示玩家详情
         function showPlayerDetail(name) {
             fetch(`/api/player/${encodeURIComponent(name)}`)
@@ -1590,10 +1979,11 @@
                 
                 const scoreClass = player.score > 0 ? 'positive' : (player.score < 0 ? 'negative' : 'zero');
                 
+                const displayScore = Number.isInteger(player.score) ? player.score : player.score.toFixed(1);
                 let html = `
                     <div class="stat-grid">
                         <div class="stat-item">
-                            <div class="stat-value ${scoreClass}">${player.score > 0 ? '+' : ''}${player.score}</div>
+                            <div class="stat-value ${scoreClass}">${player.score > 0 ? '+' : ''}${displayScore}</div>
                             <div class="stat-label">积分</div>
                         </div>
                         <div class="stat-item">
@@ -1627,11 +2017,11 @@
                     </div>
                 `;
                 
-                // 队友胜率（和谁一起赢得多）
+                // 队友胜率（最佳搭档）
                 if (player.teammate_stats && player.teammate_stats.length > 0) {
                     html += `
                         <div class="relation-section">
-                            <h4>🤝 队友胜率 <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">（和谁一起赢得多）</span></h4>
+                            <h4>🤝 队友胜率 <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">（最佳搭档）</span></h4>
                             <table class="relation-table">
                                 <thead>
                                     <tr><th>队友</th><th>同队场次</th><th>一起赢</th><th>胜率</th></tr>

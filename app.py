@@ -128,6 +128,36 @@ def add_match():
     })
 
 
+@app.route('/api/match/<int:match_id>', methods=['GET'])
+def get_match(match_id):
+    """获取比赛记录"""
+    match = db.get_match(match_id)
+    if match:
+        return jsonify(match)
+    else:
+        return jsonify({"error": "比赛记录不存在"}), 404
+
+@app.route('/api/match/<int:match_id>', methods=['PUT'])
+def update_match(match_id):
+    """更新比赛记录"""
+    data = request.json
+    if not data:
+        return jsonify({"error": "无效的数据"}), 400
+    
+    # 验证必要字段
+    if not data.get("winner"):
+        return jsonify({"error": "请指定获胜方"}), 400
+    
+    # 创建比赛数据
+    match_data = create_match_from_manual_input(data)
+    match_data["date"] = data.get("date", datetime.now().strftime("%Y-%m-%d"))
+    
+    success = db.update_match(match_id, match_data)
+    if success:
+        return jsonify({"success": True, "message": "比赛记录已更新"})
+    else:
+        return jsonify({"error": "比赛记录不存在"}), 404
+
 @app.route('/api/match/<int:match_id>', methods=['DELETE'])
 def delete_match(match_id):
     """删除比赛记录"""
