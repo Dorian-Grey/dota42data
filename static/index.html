@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DOTA4+2 飞龙在天-对黑积分系统</title>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <style>
         :root {
             --bg-primary: #0a0e17;
@@ -891,10 +892,13 @@
 
         <!-- 积分榜页面 -->
         <div id="page-leaderboard" class="page">
-            <div class="card">
+            <div class="card" id="leaderboardCard">
                 <div class="card-header">
                     <h2 class="card-title">🏆 积分排行榜</h2>
-                    <button class="btn btn-secondary" onclick="loadLeaderboard()">🔄 刷新</button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-secondary" onclick="loadLeaderboard()">🔄 刷新</button>
+                        <button class="btn btn-primary" onclick="exportLeaderboardImage()">📷 导出长图</button>
+                    </div>
                 </div>
                 
                 <div class="loading" id="leaderboardLoading">
@@ -2103,6 +2107,114 @@
             .catch(err => {
                 showToast('导出失败: ' + err.message, 'error');
             });
+        }
+
+        // 导出积分榜为长图
+        async function exportLeaderboardImage() {
+            if (currentPlayers.length === 0) {
+                showToast('暂无数据可导出', 'error');
+                return;
+            }
+
+            showToast('正在生成图片...', 'info');
+
+            // 创建一个专门用于导出的容器
+            const exportContainer = document.createElement('div');
+            exportContainer.id = 'exportContainer';
+            exportContainer.style.cssText = `
+                position: fixed;
+                left: -9999px;
+                top: 0;
+                width: 800px;
+                background: linear-gradient(180deg, #0a0e17 0%, #131a26 100%);
+                padding: 30px;
+                font-family: 'Noto Sans SC', sans-serif;
+                color: #ecf0f1;
+            `;
+
+            // 生成表格HTML
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            
+            let tableHTML = `
+                <div style="text-align: center; margin-bottom: 25px;">
+                    <h1 style="font-family: 'Orbitron', sans-serif; font-size: 28px; color: #f5a623; margin: 0;">
+                        DOTA4+2 飞龙在天
+                    </h1>
+                    <p style="color: #95a5a6; font-size: 14px; margin-top: 8px;">对黑积分榜 | ${dateStr}</p>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; background: #1a2332; border-radius: 10px; overflow: hidden;">
+                    <thead>
+                        <tr style="background: #243044;">
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">排名</th>
+                            <th style="padding: 12px 8px; text-align: left; color: #95a5a6; font-size: 12px;">玩家</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">积分</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">总场</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">胜</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">负</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">胜率</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">MVP</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">SVP</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">僵</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            currentPlayers.forEach((player, index) => {
+                const rank = index + 1;
+                const rankColor = rank === 1 ? '#ffd700' : (rank === 2 ? '#c0c0c0' : (rank === 3 ? '#cd7f32' : '#ecf0f1'));
+                const scoreColor = player.score > 0 ? '#2ecc71' : (player.score < 0 ? '#e74c3c' : '#95a5a6');
+                const scoreDisplay = Number.isInteger(player.score) ? player.score : player.score.toFixed(1);
+                const winRateColor = player.win_rate >= 50 ? '#2ecc71' : '#e74c3c';
+
+                tableHTML += `
+                    <tr style="border-bottom: 1px solid #2c3e50;">
+                        <td style="padding: 10px 8px; text-align: center; font-family: 'Orbitron', sans-serif; font-weight: bold; color: ${rankColor};">#${rank}</td>
+                        <td style="padding: 10px 8px; text-align: left; font-weight: 600;">${player.name}</td>
+                        <td style="padding: 10px 8px; text-align: center; font-family: 'Orbitron', sans-serif; font-weight: bold; color: ${scoreColor};">${player.score > 0 ? '+' : ''}${scoreDisplay}</td>
+                        <td style="padding: 10px 8px; text-align: center;">${player.total_games}</td>
+                        <td style="padding: 10px 8px; text-align: center; color: #2ecc71;">${player.wins}</td>
+                        <td style="padding: 10px 8px; text-align: center; color: #e74c3c;">${player.losses}</td>
+                        <td style="padding: 10px 8px; text-align: center; color: ${winRateColor};">${player.win_rate}%</td>
+                        <td style="padding: 10px 8px; text-align: center;">${(player.mvp_count || 0) > 0 ? `<span style="background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; padding: 2px 6px; border-radius: 4px; font-size: 11px;">MVP×${player.mvp_count}</span>` : '<span style="color: #5d6d7e;">0</span>'}</td>
+                        <td style="padding: 10px 8px; text-align: center;">${(player.svp_count || 0) > 0 ? `<span style="background: linear-gradient(135deg, #9b59b6, #8e44ad); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px;">SVP×${player.svp_count}</span>` : '<span style="color: #5d6d7e;">0</span>'}</td>
+                        <td style="padding: 10px 8px; text-align: center;">${(player.jiang_count || 0) > 0 ? `<span style="background: #7f8c8d; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px;">僵×${player.jiang_count}</span>` : '<span style="color: #5d6d7e;">0</span>'}</td>
+                    </tr>
+                `;
+            });
+
+            tableHTML += `
+                    </tbody>
+                </table>
+                <div style="text-align: center; margin-top: 20px; color: #5d6d7e; font-size: 12px;">
+                    积分规则：胜+1 负-1 | MVP+0.5 僵-0.5 | SVP不扣分
+                </div>
+            `;
+
+            exportContainer.innerHTML = tableHTML;
+            document.body.appendChild(exportContainer);
+
+            try {
+                const canvas = await html2canvas(exportContainer, {
+                    backgroundColor: '#0a0e17',
+                    scale: 2,
+                    useCORS: true,
+                    logging: false
+                });
+
+                // 下载图片
+                const link = document.createElement('a');
+                link.download = `积分榜_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                showToast('图片已保存', 'success');
+            } catch (err) {
+                showToast('导出失败: ' + err.message, 'error');
+            } finally {
+                document.body.removeChild(exportContainer);
+            }
         }
 
         // Toast通知
