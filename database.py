@@ -156,6 +156,7 @@ def calculate_compensation(data: dict, winner_players: list, loser_players: list
     计算阵容补分
     
     规则：
+    - 补分规则只有在所有选手都分类后才会启用
     - 阵容分数差距1分，失败弱者阵容每人补偿0.5分
     - 差距>=2分，成绩无效
     
@@ -164,20 +165,41 @@ def calculate_compensation(data: dict, winner_players: list, loser_players: list
         "loser_score": 败方阵容分,
         "difference": 分差,
         "compensation": 补分数（败方弱者补偿）,
-        "invalid": 是否无效（差距>=2分）
+        "invalid": 是否无效（差距>=2分）,
+        "all_classified": 是否所有选手都已分类
     }
     """
+    # 检查是否所有玩家都有马匹分类
+    all_classified = True
+    all_players = winner_players + loser_players
+    for player in all_players:
+        name = player.get("name", "")
+        if name:
+            horse_level = get_player_horse_level(data, name)
+            if not horse_level:  # 空字符串表示未分类
+                all_classified = False
+                break
+    
+    result = {
+        "winner_score": 0,
+        "loser_score": 0,
+        "difference": 0,
+        "compensation": 0,
+        "invalid": False,
+        "all_classified": all_classified
+    }
+    
+    # 如果有玩家未分类，不计算补分
+    if not all_classified:
+        return result
+    
     winner_score = calculate_team_score(data, winner_players)
     loser_score = calculate_team_score(data, loser_players)
     difference = winner_score - loser_score
     
-    result = {
-        "winner_score": winner_score,
-        "loser_score": loser_score,
-        "difference": difference,
-        "compensation": 0,
-        "invalid": False
-    }
+    result["winner_score"] = winner_score
+    result["loser_score"] = loser_score
+    result["difference"] = difference
     
     # 如果胜方阵容更强，败方可能获得补分
     if difference > 0:
@@ -542,23 +564,27 @@ def preview_team_balance(radiant_names: List[str], dire_names: List[str]) -> dic
         "difference": 分差,
         "radiant_players": [{"name": xx, "horse_level": xx, "horse_value": xx}, ...],
         "dire_players": [...],
-        "warning": 警告信息
+        "warning": 警告信息,
+        "all_classified": 是否所有选手都已分类
     }
     """
     data = load_data()
     
+    all_classified = True
     radiant_info = []
     radiant_total = 0
     for name in radiant_names:
         if name:
             level = get_player_horse_level(data, name)
             value = get_horse_value(level)
+            if not level:
+                all_classified = False
             radiant_info.append({
                 "name": name,
                 "horse_level": level,
-                "horse_value": value
+                "horse_value": value if value is not None else 0
             })
-            radiant_total += value
+            radiant_total += value if value is not None else 0
     
     dire_info = []
     dire_total = 0
@@ -566,17 +592,21 @@ def preview_team_balance(radiant_names: List[str], dire_names: List[str]) -> dic
         if name:
             level = get_player_horse_level(data, name)
             value = get_horse_value(level)
+            if not level:
+                all_classified = False
             dire_info.append({
                 "name": name,
                 "horse_level": level,
-                "horse_value": value
+                "horse_value": value if value is not None else 0
             })
-            dire_total += value
+            dire_total += value if value is not None else 0
     
     difference = abs(radiant_total - dire_total)
     
     warning = ""
-    if difference >= 2:
+    if not all_classified:
+        warning = "ℹ️ 有选手未分类马匹，补分规则暂不启用"
+    elif difference >= 2:
         warning = f"⚠️ 阵容差距{difference}分（>=2分），若比赛完成成绩将无效！"
     elif difference == 1:
         weak_team = "天辉" if radiant_total < dire_total else "夜魔"
@@ -588,7 +618,8 @@ def preview_team_balance(radiant_names: List[str], dire_names: List[str]) -> dic
         "difference": difference,
         "radiant_players": radiant_info,
         "dire_players": dire_info,
-        "warning": warning
+        "warning": warning,
+        "all_classified": all_classified
     }
 
 def delete_match(match_id: int) -> bool:
