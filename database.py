@@ -1,6 +1,16 @@
 """
 数据库模型和操作
 使用JSON文件存储数据，简单高效
+
+积分规则：
+- 胜方每人+1分，MVP额外+0.5分
+- 负方每人-1分，SVP额外+0.5分，僵-0.5分
+- 马匹分类：特等(前20%,价值1)、中等(60%,价值0)、自动(后20%,价值-1)
+- 补分：阵容差距1分时失败弱方每人补偿0.5分，差距>=2分成绩无效
+
+积分模式：
+- 赛事模式：打满10局按积分排名，至少8局才能上排名
+- 长期模式：所有比赛计入长期积分排名，用于马匹分类
 """
 import json
 import os
@@ -10,13 +20,33 @@ import pandas as pd
 
 DATA_FILE = "game_data.json"
 
+# 马匹等级定义
+HORSE_LEVELS = {
+    "特等": 1,    # 前20%，价值1
+    "中等": 0,    # 中间60%，价值0
+    "自动": -1    # 后20%，价值-1
+}
+
 def init_database():
     """初始化数据库文件"""
     if not os.path.exists(DATA_FILE):
         data = {
-            "matches": [],  # 比赛记录
-            "players": {}   # 玩家统计
+            "matches": [],          # 比赛记录
+            "players": {},          # 玩家统计
+            "horse_overrides": {},  # 手动设置的马匹等级（未满20场时使用）
+            "seasons": [],          # 赛事记录
+            "current_season": None  # 当前赛事ID
         }
+        save_data(data)
+    else:
+        # 确保数据文件包含新字段
+        data = load_data()
+        if "horse_overrides" not in data:
+            data["horse_overrides"] = {}
+        if "seasons" not in data:
+            data["seasons"] = []
+        if "current_season" not in data:
+            data["current_season"] = None
         save_data(data)
     return load_data()
 
@@ -33,7 +63,135 @@ def save_data(data: dict):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def add_match(match_data: dict) -> int:
+def get_player_horse_level(data: dict, player_name: str) -> str:
+    """
+    获取玩家的马匹等级
+    
+    规则：
+    - 打满20场后自动分类：特等(前20%)、中等(60%)、自动(后20%)
+    - 未打满20场按手动设置（horse_overrides），未设置则返回空
+    """
+    # 检查是否有手动设置
+    horse_overrides = data.get("horse_overrides", {})
+    if player_name in horse_overrides:
+        return horse_overrides[player_name]
+    
+    # 检查是否打满20场
+    player = data.get("players", {}).get(player_name)
+    if not player or player.get("total_games", 0) < 20:
+        # 未打满20场且无手动设置，返回空字符串
+        return ""
+    
+    # 打满20场，自动计算分类
+    return calculate_auto_horse_level(data, player_name)
+
+
+def calculate_auto_horse_level(data: dict, player_name: str) -> str:
+    """
+    自动计算马匹等级（基于长期积分排名）
+    前20%为特等，中间60%为中等，后20%为自动
+    """
+    # 获取所有打满20场的玩家
+    qualified_players = []
+    for name, player in data.get("players", {}).items():
+        if player.get("total_games", 0) >= 20:
+            qualified_players.append({
+                "name": name,
+                "score": player.get("score", 0)
+            })
+    
+    if not qualified_players:
+        return "中等"
+    
+    # 按积分排序
+    qualified_players.sort(key=lambda x: x["score"], reverse=True)
+    total = len(qualified_players)
+    
+    # 找到当前玩家的排名
+    rank = -1
+    for i, p in enumerate(qualified_players):
+        if p["name"] == player_name:
+            rank = i + 1
+            break
+    
+    if rank == -1:
+        return "中等"
+    
+    # 计算百分比
+    percentile = rank / total
+    
+    if percentile <= 0.2:
+        return "特等"
+    elif percentile <= 0.8:
+        return "中等"
+    else:
+        return "自动"
+
+
+def get_horse_value(horse_level: str):
+    """获取马匹等级对应的价值，未分类返回None"""
+    if not horse_level:
+        return None
+    return HORSE_LEVELS.get(horse_level, 0)
+
+
+def calculate_team_score(data: dict, players: list) -> int:
+    """
+    计算阵容总分
+    根据每个玩家的马匹等级计算阵容价值
+    未分类的玩家按0计算
+    """
+    total = 0
+    for player in players:
+        name = player.get("name", "")
+        if name:
+            horse_level = get_player_horse_level(data, name)
+            value = get_horse_value(horse_level)
+            total += value if value is not None else 0
+    return total
+
+
+def calculate_compensation(data: dict, winner_players: list, loser_players: list) -> dict:
+    """
+    计算阵容补分
+    
+    规则：
+    - 阵容分数差距1分，失败弱者阵容每人补偿0.5分
+    - 差距>=2分，成绩无效
+    
+    返回: {
+        "winner_score": 胜方阵容分,
+        "loser_score": 败方阵容分,
+        "difference": 分差,
+        "compensation": 补分数（败方弱者补偿）,
+        "invalid": 是否无效（差距>=2分）
+    }
+    """
+    winner_score = calculate_team_score(data, winner_players)
+    loser_score = calculate_team_score(data, loser_players)
+    difference = winner_score - loser_score
+    
+    result = {
+        "winner_score": winner_score,
+        "loser_score": loser_score,
+        "difference": difference,
+        "compensation": 0,
+        "invalid": False
+    }
+    
+    # 如果胜方阵容更强，败方可能获得补分
+    if difference > 0:
+        if difference >= 2:
+            # 差距>=2分，成绩无效
+            result["invalid"] = True
+        else:
+            # 差距1分，败方每人补偿0.5分
+            result["compensation"] = 0.5
+    
+    return result
+
+
+def add_match(match_data: dict) -> dict:
     """
     添加一场比赛记录
     match_data: {
@@ -52,6 +210,12 @@ def add_match(match_data: dict) -> int:
         "economy": 3936,
         "tags": ["MVP", "稳", "壕"]  # 称号标签
     }
+    
+    返回: {
+        "match_id": 比赛ID,
+        "compensation_info": 补分信息,
+        "invalid": 是否无效
+    }
     """
     data = load_data()
     
@@ -61,16 +225,28 @@ def add_match(match_data: dict) -> int:
     
     # 更新玩家统计
     winner = match_data.get("winner", "")
+    radiant_players = match_data.get("radiant_players", [])
+    dire_players = match_data.get("dire_players", [])
+    
+    radiant_won = (winner == "天辉")
+    dire_won = (winner == "夜魔")
+    
+    # 计算阵容补分
+    winner_players = radiant_players if radiant_won else dire_players
+    loser_players = dire_players if radiant_won else radiant_players
+    
+    comp_info = calculate_compensation(data, winner_players, loser_players)
+    match_data["compensation_info"] = comp_info
     
     # 处理天辉队
-    radiant_won = (winner == "天辉")
-    for player in match_data.get("radiant_players", []):
-        update_player_stats(data, player, radiant_won, match_data.get("dire_players", []))
+    bonus_radiant = comp_info["compensation"] if not radiant_won and comp_info["compensation"] > 0 else 0
+    for player in radiant_players:
+        update_player_stats(data, player, radiant_won, dire_players, bonus_radiant)
     
     # 处理夜魔队
-    dire_won = (winner == "夜魔")
-    for player in match_data.get("dire_players", []):
-        update_player_stats(data, player, dire_won, match_data.get("radiant_players", []))
+    bonus_dire = comp_info["compensation"] if not dire_won and comp_info["compensation"] > 0 else 0
+    for player in dire_players:
+        update_player_stats(data, player, dire_won, radiant_players, bonus_dire)
     
     # 记录队友和对手关系
     update_teammate_opponent_stats(data, match_data)
@@ -78,10 +254,21 @@ def add_match(match_data: dict) -> int:
     data["matches"].append(match_data)
     save_data(data)
     
-    return match_id
+    return {
+        "match_id": match_id,
+        "compensation_info": comp_info,
+        "invalid": comp_info["invalid"]
+    }
 
-def update_player_stats(data: dict, player: dict, won: bool, opponents: list):
-    """更新单个玩家的统计数据"""
+def update_player_stats(data: dict, player: dict, won: bool, opponents: list, bonus_score: float = 0):
+    """
+    更新单个玩家的统计数据
+    
+    积分规则：
+    - 胜方每人+1分，MVP额外+0.5分
+    - 负方每人-1分，SVP额外+0.5分，僵-0.5分
+    - bonus_score: 补分（阵容差距补偿）
+    """
     name = player.get("name", "")
     if not name:
         return
@@ -89,7 +276,7 @@ def update_player_stats(data: dict, player: dict, won: bool, opponents: list):
     tags = player.get("tags", [])
     is_mvp = "MVP" in tags
     is_svp = "SVP" in tags
-    is_jiang = "僵" in tags  # 僵尸标签
+    is_jiang = "僵" in tags  # 僵标签，负方僵-0.5分
     
     if name not in data["players"]:
         data["players"][name] = {
@@ -97,31 +284,39 @@ def update_player_stats(data: dict, player: dict, won: bool, opponents: list):
             "total_games": 0,
             "wins": 0,
             "losses": 0,
-            "score": 0,
+            "score": 0,              # 长期积分
+            "season_score": 0,       # 赛事积分
+            "season_games": 0,       # 赛事场次
             "mvp_count": 0,
             "svp_count": 0,
             "jiang_count": 0,
-            "teammates": {},    # 队友胜率统计
-            "opponents": {}     # 对手胜率统计
+            "teammates": {},         # 队友胜率统计
+            "opponents": {}          # 对手胜率统计
         }
     
     p = data["players"][name]
     p["total_games"] += 1
     
+    # 基础积分
     if won:
         p["wins"] += 1
-        p["score"] += 1
+        p["score"] += 1  # 胜方+1分
+        # MVP额外+0.5分（仅胜方有MVP）
+        if is_mvp:
+            p["score"] += 0.5
     else:
         p["losses"] += 1
-        # SVP不扣分
-        if not is_svp:
-            p["score"] -= 1
+        p["score"] -= 1  # 负方-1分
+        # SVP额外+0.5分（仅负方有SVP）
+        if is_svp:
+            p["score"] += 0.5
+        # 僵-0.5分（仅负方有僵）
+        if is_jiang:
+            p["score"] -= 0.5
     
-    # 个人称号加减分（不管胜负）
-    if is_mvp:
-        p["score"] += 0.5  # MVP额外加0.5分
-    if is_jiang:
-        p["score"] -= 0.5  # 僵额外扣0.5分
+    # 补分（阵容差距补偿，仅负方可能获得）
+    if bonus_score > 0:
+        p["score"] += bonus_score
     
     # 更新称号统计
     if is_mvp:
@@ -186,24 +381,68 @@ def update_teammate_opponent_stats(data: dict, match_data: dict):
             if dire_won:
                 p1["opponents"][name2]["wins"] += 1
 
+def set_horse_level(player_name: str, level: str) -> bool:
+    """
+    手动设置玩家的马匹等级（用于未满20场的玩家）
+    level: "特等" / "中等" / "自动"
+    """
+    if level not in HORSE_LEVELS:
+        return False
+    
+    data = load_data()
+    if "horse_overrides" not in data:
+        data["horse_overrides"] = {}
+    
+    data["horse_overrides"][player_name] = level
+    save_data(data)
+    return True
+
+
+def remove_horse_override(player_name: str) -> bool:
+    """移除玩家的手动马匹等级设置"""
+    data = load_data()
+    if player_name in data.get("horse_overrides", {}):
+        del data["horse_overrides"][player_name]
+        save_data(data)
+        return True
+    return False
+
+
+def get_all_horse_levels() -> Dict[str, str]:
+    """获取所有玩家的马匹等级"""
+    data = load_data()
+    result = {}
+    
+    for name in data.get("players", {}).keys():
+        result[name] = get_player_horse_level(data, name)
+    
+    return result
+
+
 def get_all_players() -> List[dict]:
-    """获取所有玩家统计"""
+    """获取所有玩家统计（含马匹等级）"""
     data = load_data()
     players = list(data["players"].values())
     
-    # 计算胜率
+    # 计算胜率和马匹等级
     for p in players:
+        name = p["name"]
         if p["total_games"] > 0:
             p["win_rate"] = round(p["wins"] / p["total_games"] * 100, 1)
         else:
             p["win_rate"] = 0
+        
+        # 添加马匹等级信息
+        p["horse_level"] = get_player_horse_level(data, name)
+        p["horse_value"] = get_horse_value(p["horse_level"])
+        p["is_horse_auto"] = p["total_games"] >= 20 and name not in data.get("horse_overrides", {})
     
     # 按积分排序
     players.sort(key=lambda x: x["score"], reverse=True)
     return players
 
 def get_player_detail(name: str) -> Optional[dict]:
-    """获取玩家详细信息，包括队友和对手胜率"""
+    """获取玩家详细信息，包括队友和对手胜率及马匹等级"""
     data = load_data()
     if name not in data["players"]:
         return None
@@ -215,6 +454,11 @@ def get_player_detail(name: str) -> Optional[dict]:
         player["win_rate"] = round(player["wins"] / player["total_games"] * 100, 1)
     else:
         player["win_rate"] = 0
+    
+    # 添加马匹等级信息
+    player["horse_level"] = get_player_horse_level(data, name)
+    player["horse_value"] = get_horse_value(player["horse_level"])
+    player["is_horse_auto"] = player["total_games"] >= 20 and name not in data.get("horse_overrides", {})
     
     # 计算队友胜率（和谁一起时胜率从高到低）
     teammate_stats = []
@@ -275,15 +519,77 @@ def export_to_excel(filename: str = "dota_stats.xlsx"):
     
     # 选择要导出的列
     columns = ["name", "total_games", "wins", "losses", "score", 
-               "win_rate", "mvp_count", "svp_count", "jiang_count"]
+               "win_rate", "mvp_count", "svp_count", "jiang_count", 
+               "horse_level", "horse_value"]
     df = df[[c for c in columns if c in df.columns]]
     
     # 重命名列
     df.columns = ["玩家", "总场次", "胜场", "负场", "积分", 
-                  "胜率%", "MVP次数", "SVP次数", "僵次数"]
+                  "胜率%", "MVP次数", "SVP次数", "僵次数",
+                  "马匹等级", "马匹价值"]
     
     df.to_excel(filename, index=False)
     return filename
+
+
+def preview_team_balance(radiant_names: List[str], dire_names: List[str]) -> dict:
+    """
+    预览两队阵容平衡情况（用于录入前检查）
+    
+    返回: {
+        "radiant_score": 天辉阵容分,
+        "dire_score": 夜魔阵容分,
+        "difference": 分差,
+        "radiant_players": [{"name": xx, "horse_level": xx, "horse_value": xx}, ...],
+        "dire_players": [...],
+        "warning": 警告信息
+    }
+    """
+    data = load_data()
+    
+    radiant_info = []
+    radiant_total = 0
+    for name in radiant_names:
+        if name:
+            level = get_player_horse_level(data, name)
+            value = get_horse_value(level)
+            radiant_info.append({
+                "name": name,
+                "horse_level": level,
+                "horse_value": value
+            })
+            radiant_total += value
+    
+    dire_info = []
+    dire_total = 0
+    for name in dire_names:
+        if name:
+            level = get_player_horse_level(data, name)
+            value = get_horse_value(level)
+            dire_info.append({
+                "name": name,
+                "horse_level": level,
+                "horse_value": value
+            })
+            dire_total += value
+    
+    difference = abs(radiant_total - dire_total)
+    
+    warning = ""
+    if difference >= 2:
+        warning = f"⚠️ 阵容差距{difference}分（>=2分），若比赛完成成绩将无效！"
+    elif difference == 1:
+        weak_team = "天辉" if radiant_total < dire_total else "夜魔"
+        warning = f"阵容差距{difference}分，若{weak_team}失败每人可获得0.5分补偿"
+    
+    return {
+        "radiant_score": radiant_total,
+        "dire_score": dire_total,
+        "difference": difference,
+        "radiant_players": radiant_info,
+        "dire_players": dire_info,
+        "warning": warning
+    }
 
 def delete_match(match_id: int) -> bool:
     """删除指定比赛记录并重新计算统计"""
@@ -346,18 +652,29 @@ def update_match(match_id: int, match_data: dict) -> bool:
     return True
 
 def recalculate_all_stats(data: dict):
-    """重新计算所有玩家统计"""
+    """重新计算所有玩家统计（使用新积分规则）"""
     data["players"] = {}
+    
     for match in data["matches"]:
         winner = match.get("winner", "")
+        radiant_players = match.get("radiant_players", [])
+        dire_players = match.get("dire_players", [])
         radiant_won = (winner == "天辉")
         dire_won = (winner == "夜魔")
         
-        for player in match.get("radiant_players", []):
-            update_player_stats(data, player, radiant_won, match.get("dire_players", []))
+        # 获取补分信息（如果有的话）
+        comp_info = match.get("compensation_info", {})
+        compensation = comp_info.get("compensation", 0)
         
-        for player in match.get("dire_players", []):
-            update_player_stats(data, player, dire_won, match.get("radiant_players", []))
+        # 处理天辉队
+        bonus_radiant = compensation if not radiant_won and compensation > 0 else 0
+        for player in radiant_players:
+            update_player_stats(data, player, radiant_won, dire_players, bonus_radiant)
+        
+        # 处理夜魔队
+        bonus_dire = compensation if not dire_won and compensation > 0 else 0
+        for player in dire_players:
+            update_player_stats(data, player, dire_won, radiant_players, bonus_dire)
         
         update_teammate_opponent_stats(data, match)
 

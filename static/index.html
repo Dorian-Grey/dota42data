@@ -920,6 +920,7 @@
                                 <th class="sortable" onclick="sortTable('mvp_count')">MVP <span class="sort-icon" id="sort-mvp_count">↕</span></th>
                                 <th class="sortable" onclick="sortTable('svp_count')">SVP <span class="sort-icon" id="sort-svp_count">↕</span></th>
                                 <th class="sortable" onclick="sortTable('jiang_count')">僵 <span class="sort-icon" id="sort-jiang_count">↕</span></th>
+                                <th class="sortable" onclick="sortTable('horse_value')">马匹 <span class="sort-icon" id="sort-horse_value">↕</span></th>
                             </tr>
                         </thead>
                         <tbody id="leaderboardBody">
@@ -1551,6 +1552,15 @@
                 const displayRank = index + 1;
                 const rankClass = displayRank <= 3 ? `rank-${displayRank}` : '';
                 
+                const horseLevel = player.horse_level || '';
+                const horseValue = player.horse_value;
+                const hasHorse = horseLevel !== '';
+                const horseColor = horseLevel === '特等' ? '#ffd700' : (horseLevel === '自动' ? '#e74c3c' : '#95a5a6');
+                const horseIcon = horseLevel === '特等' ? '🏆' : (horseLevel === '自动' ? '🐴' : '🐎');
+                const horseDisplay = hasHorse 
+                    ? `<span style="color: ${horseColor}; font-weight: 600;">${horseIcon} ${horseLevel}<span style="font-size: 0.75rem; opacity: 0.7;">(${horseValue >= 0 ? '+' : ''}${horseValue})</span></span>`
+                    : '<span style="color: var(--text-muted);">-</span>';
+                
                 tr.innerHTML = `
                     <td class="rank ${rankClass}">#${displayRank}</td>
                     <td>
@@ -1558,22 +1568,23 @@
                             ${player.name}
                         </span>
                     </td>
-                        <td class="score ${scoreClass}">${player.score > 0 ? '+' : ''}${Number.isInteger(player.score) ? player.score : player.score.toFixed(1)}</td>
+                    <td class="score ${scoreClass}">${player.score > 0 ? '+' : ''}${Number.isInteger(player.score) ? player.score : player.score.toFixed(1)}</td>
                     <td>${player.total_games}</td>
                     <td style="color: var(--accent-green)">${player.wins}</td>
                     <td style="color: var(--accent-red)">${player.losses}</td>
                     <td>
-                            <div class="win-rate">
-                                <div class="win-rate-bar">
-                                    <div class="win-rate-fill" style="width: ${player.win_rate}%"></div>
-                                </div>
-                                <span>${player.win_rate}%</span>
+                        <div class="win-rate">
+                            <div class="win-rate-bar">
+                                <div class="win-rate-fill" style="width: ${player.win_rate}%"></div>
                             </div>
-                        </td>
-                        <td>${(player.mvp_count || 0) > 0 ? `<span class="tag-badge mvp">MVP×${player.mvp_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
-                        <td>${(player.svp_count || 0) > 0 ? `<span class="tag-badge svp">SVP×${player.svp_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
-                        <td>${(player.jiang_count || 0) > 0 ? `<span class="tag-badge jiang">僵×${player.jiang_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
-                    `;
+                            <span>${player.win_rate}%</span>
+                        </div>
+                    </td>
+                    <td>${(player.mvp_count || 0) > 0 ? `<span class="tag-badge mvp">MVP×${player.mvp_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
+                    <td>${(player.svp_count || 0) > 0 ? `<span class="tag-badge svp">SVP×${player.svp_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
+                    <td>${(player.jiang_count || 0) > 0 ? `<span class="tag-badge jiang">僵×${player.jiang_count}</span>` : '<span style="color: var(--text-muted)">0</span>'}</td>
+                    <td>${horseDisplay}</td>
+                `;
                 tbody.appendChild(tr);
             });
         }
@@ -2125,7 +2136,7 @@
                 position: fixed;
                 left: -9999px;
                 top: 0;
-                width: 800px;
+                width: 900px;
                 background: linear-gradient(180deg, #0a0e17 0%, #131a26 100%);
                 padding: 30px;
                 font-family: 'Noto Sans SC', sans-serif;
@@ -2156,6 +2167,7 @@
                             <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">MVP</th>
                             <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">SVP</th>
                             <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">僵</th>
+                            <th style="padding: 12px 8px; text-align: center; color: #95a5a6; font-size: 12px;">马匹</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2167,6 +2179,11 @@
                 const scoreColor = player.score > 0 ? '#2ecc71' : (player.score < 0 ? '#e74c3c' : '#95a5a6');
                 const scoreDisplay = Number.isInteger(player.score) ? player.score : player.score.toFixed(1);
                 const winRateColor = player.win_rate >= 50 ? '#2ecc71' : '#e74c3c';
+                const horseLevel = player.horse_level || '';
+                const horseValue = player.horse_value;
+                const hasHorse = horseLevel !== '';
+                const horseColor = horseLevel === '特等' ? '#ffd700' : (horseLevel === '自动' ? '#e74c3c' : '#95a5a6');
+                const horseDisplay = hasHorse ? `${horseLevel}(${horseValue >= 0 ? '+' : ''}${horseValue})` : '-';
 
                 tableHTML += `
                     <tr style="border-bottom: 1px solid #2c3e50;">
@@ -2180,6 +2197,7 @@
                         <td style="padding: 10px 8px; text-align: center;">${(player.mvp_count || 0) > 0 ? `<span style="background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; padding: 2px 6px; border-radius: 4px; font-size: 11px;">MVP×${player.mvp_count}</span>` : '<span style="color: #5d6d7e;">0</span>'}</td>
                         <td style="padding: 10px 8px; text-align: center;">${(player.svp_count || 0) > 0 ? `<span style="background: linear-gradient(135deg, #9b59b6, #8e44ad); color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px;">SVP×${player.svp_count}</span>` : '<span style="color: #5d6d7e;">0</span>'}</td>
                         <td style="padding: 10px 8px; text-align: center;">${(player.jiang_count || 0) > 0 ? `<span style="background: #7f8c8d; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 11px;">僵×${player.jiang_count}</span>` : '<span style="color: #5d6d7e;">0</span>'}</td>
+                        <td style="padding: 10px 8px; text-align: center; color: ${hasHorse ? horseColor : '#5d6d7e'}; font-weight: 600;">${horseDisplay}</td>
                     </tr>
                 `;
             });
@@ -2188,7 +2206,7 @@
                     </tbody>
                 </table>
                 <div style="text-align: center; margin-top: 20px; color: #5d6d7e; font-size: 12px;">
-                    积分规则：胜+1 负-1 | MVP+0.5 僵-0.5 | SVP不扣分
+                    积分规则：胜+1 负-1 | MVP+0.5 SVP+0.5 僵-0.5 | 阵容差距1分补0.5分
                 </div>
             `;
 
